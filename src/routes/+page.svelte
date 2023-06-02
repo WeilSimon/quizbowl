@@ -2,11 +2,11 @@
 	<center>
 		<h1>Select a Role</h1>
 		<div class="vertcenter">
-			<a href="/host">
+			<a href="host">
 				<button class="btn btn-primary">Host</button>
 			</a>
 			<br />
-			<a href="/player">
+			<a href="player">
 				<button class="btn btn-primary">Player</button>
 			</a>
 		</div>
