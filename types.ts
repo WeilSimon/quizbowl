@@ -15,11 +15,12 @@ export interface PlayerData {
     isLocked: boolean;
     isBuzzed: boolean;
     roomId: number;
-    teamNumber: number;
+    teamNumber: 0|1|2;
     latency:number;
 }
 
 export interface TeamData {
+    teamNumber:0|1|2;
     points: number;
     playerList: {[index:string]: PlayerData};
     isLocked: boolean;

@@ -17,6 +17,6 @@ injectSocketIO(server);
 // SvelteKit handlers
 app.use(handler);
 
-server.listen(9350, () => {
-    console.log('Running on http://localhost:9350');
+server.listen(9357, () => {
+    console.log('Running on http://localhost:9357');
 });

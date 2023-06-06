@@ -15,6 +15,33 @@
             document.getElementById("roomId")?.classList.add("is-invalid")
         })
     }
+    function getQueryVariable(key:string) {
+    var query = window.location.search.substring(1);
+    var vars = query.split('&');
+    for (var i = 0; i < vars.length; i++) {
+        var pair = vars[i].split('=');
+        if (decodeURIComponent(pair[0]) == key) {
+            return decodeURIComponent(pair[1]);
+        }
+    }
+    console.log('Query variable %s not found', key);
+}
+
+    onMount(() => {
+        
+        if (getQueryVariable("user")) {
+            if (getQueryVariable("roomId")) {
+                $name = getQueryVariable("user")!.slice(0,30)
+                $roomId = parseInt(getQueryVariable("roomId")!)
+                login(() => {
+                    document.getElementById("roomId")?.classList.add("is-invalid")
+                })
+            } else {
+                $name = getQueryVariable("user")!.slice(0,30)
+            }
+        }
+
+	})
     roomId.subscribe((value) => {
         if (value < 0) {
             $roomId = parseInt(value.toString().slice(1))

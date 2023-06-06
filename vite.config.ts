@@ -4,7 +4,7 @@ import { webSocketServer } from './webSocketServer.js';
 
 export default defineConfig({
 	server: {
-        port: 9350
+        port: 9357
     },
 	plugins: [sveltekit(), webSocketServer]
 });

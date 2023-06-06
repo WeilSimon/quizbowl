@@ -1,4 +1,4 @@
-import { Server, Socket, type ServerOptions } from 'socket.io';
+import { Server, Socket, type DisconnectReason, type ServerOptions } from 'socket.io';
 import { empty } from 'svelte/internal';
 import type { GameStateData, PlayerData, Settings, TeamData } from './types';
 
@@ -12,12 +12,17 @@ export default function injectSocketIO(server: Partial<ServerOptions> | undefine
         roomId: number;
         settings: Settings;
         gameState: GameState;
-        constructor(){
-            do{
-            this.roomId = Math.floor(Math.random()*999999);
-            }while(rooms[this.roomId] != undefined)
+        hostId: string;
+        constructor(roomId:number, hostId:string){
+            if(roomId != null && rooms[roomId] == undefined) this.roomId = roomId;
+            else{
+                do{
+                this.roomId = Math.floor(Math.random()*999999);
+                }while(rooms[this.roomId] != undefined)
+            }
             this.gameState = new GameState;
             this.settings = {shouldLock:true, autoClear:true};
+            this.hostId = hostId;
         }
     }
 
@@ -27,8 +32,8 @@ export default function injectSocketIO(server: Partial<ServerOptions> | undefine
         teamNull: {[index:string]: Player};
         buzzedList: {[index:string]: Player};
         constructor(){
-            this.team1 = new Team();
-            this.team2 = new Team();
+            this.team1 = new Team(1);
+            this.team2 = new Team(2);
             this.teamNull = {};
             this.buzzedList = {};
         }
@@ -37,7 +42,7 @@ export default function injectSocketIO(server: Partial<ServerOptions> | undefine
             this.teamNull[player.id] = player;
         }
 
-        public movePlayer(player:Player, teamNumber:number){
+        public movePlayer(player:Player, teamNumber:0|1|2){
             if(teamNumber == 1)this.team1.addPLayer(player);
             else this.team2.addPLayer(player);
 
@@ -65,6 +70,10 @@ export default function injectSocketIO(server: Partial<ServerOptions> | undefine
                 player.isBuzzed = false;
                 player.isLocked = false;
             });
+            Object.values(this.teamNull).forEach(player =>{
+                player.isBuzzed = false;
+                player.isLocked = false;
+            })
             this.team1.isLocked = false;
             this.team2.isLocked = false;
         }
@@ -82,7 +91,9 @@ export default function injectSocketIO(server: Partial<ServerOptions> | undefine
             if(player.teamNumber == 1){
                 this.team1.isLocked = true;
                 Object.entries(this.buzzedList).forEach(entry =>{
-                    if(entry[1].teamNumber == 1) delete this.buzzedList[entry[0]];
+                    if(entry[1].teamNumber == 1){
+                        delete this.buzzedList[entry[0]];
+                    }
                 })
                 Object.values(this.team1.playerList).forEach(player => {
                     player.isBuzzed = false;
@@ -92,23 +103,29 @@ export default function injectSocketIO(server: Partial<ServerOptions> | undefine
             else if (player.teamNumber == 2){
                 this.team2.isLocked = true;
                 Object.entries(this.buzzedList).forEach(entry =>{
-                    if(entry[1].teamNumber == 2) delete this.buzzedList[entry[0]];
+                    
+                    if(entry[1].teamNumber == 2) {
+                        delete this.buzzedList[entry[0]];
+                    }
                 })
                 Object.values(this.team2.playerList).forEach(player => {
                     player.isBuzzed = false;
                     player.isLocked = true;
                 });
             }
+
             
         }
     }
 
 
     class Team implements TeamData {
+        teamNumber:0|1|2;
         points: number;
         playerList: {[index:string]: Player};
         isLocked: boolean;
-        constructor() {
+        constructor(teamNumber:0|1|2) {
+            this.teamNumber = teamNumber
             this.points = 0;
             this.playerList = {};
             this.isLocked = false;
@@ -139,7 +156,7 @@ export default function injectSocketIO(server: Partial<ServerOptions> | undefine
         isBuzzed: boolean;
         roomId: number;
         latency: number = 0;
-        teamNumber: number;
+        teamNumber: 0|1|2;
         constructor(id:string, name:string, roomId:number){
             this.points = 0;
             this.timesBuzzed = 0;
@@ -163,7 +180,7 @@ export default function injectSocketIO(server: Partial<ServerOptions> | undefine
 
     const io = new Server(server, {
         cors: {
-            origin: ["http://localhost:9351", "http://localhost:9350"]
+            origin: ["http://localhost:9357", "http://localhost:9351"]
         }
     });
 
@@ -186,6 +203,42 @@ export default function injectSocketIO(server: Partial<ServerOptions> | undefine
     io.on('connection', (socket) => {
 
         socket.on("disconnect", ()=>{
+            const player:Player = players[socket.id];
+            if(player != undefined){
+                console.log("player disconnectiong")
+                console.log(player);
+                const gameState:GameState = rooms[player.roomId].gameState;
+                gameState.removePlayer(player);
+
+                delete players[socket.id];
+                io.to(player.roomId.toString()).emit("update", gameState);
+            }
+            else {
+                let roomId:number;
+                Object.entries(rooms).forEach(entries =>{
+                    if(entries[1].hostId == socket.id){
+                        roomId = parseInt(entries[0]);
+                    }
+                })
+                if(typeof roomId! !== 'undefined'){
+                    const gameState:GameState = rooms[roomId!].gameState;
+            
+                    Object.values(gameState.team1.playerList).forEach(player => {
+                        delete players[player.id];
+                        io.sockets.sockets.get(player.id)?.disconnect();
+                    });
+                    Object.values(gameState.team2.playerList).forEach(player => {
+                        delete players[player.id];
+                        io.sockets.sockets.get(player.id)?.disconnect();
+                    });
+                    Object.values(gameState.teamNull).forEach(player =>{
+                        delete players[player.id];
+                        io.sockets.sockets.get(player.id)?.disconnect();
+                    })
+                
+                    delete rooms[roomId!];
+                }
+            }
         })
 
         socket.on("login", (data: {name:string; roomId:number}, callback: (success:ConnectionResponse) => void)=>{
@@ -204,8 +257,9 @@ export default function injectSocketIO(server: Partial<ServerOptions> | undefine
             callback(response)
         })
 
-        socket.on("hostLogin",( callback:(data:{roomId:number, settings:Settings}) => void)=>{
-            const room = new Room();
+        socket.on("hostLogin", (data:{roomId:number}, callback:(data:{roomId:number, settings:Settings})=>void)=>{
+           
+            const room = new Room(data.roomId, socket.id);
             rooms[room.roomId] = room;
             socket.join(room.roomId.toString());
             socket.join((room.roomId.toString() + "host"));
@@ -221,6 +275,7 @@ export default function injectSocketIO(server: Partial<ServerOptions> | undefine
         socket.on("kickPlayer", (id:string) => {
             const player:Player = players[id];
             const gameState:GameState = rooms[player.roomId].gameState;
+
             gameState.removePlayer(player);
 
             delete players[id];
@@ -234,39 +289,44 @@ export default function injectSocketIO(server: Partial<ServerOptions> | undefine
             const gameState = rooms[player.roomId].gameState;
             player.timesBuzzed += 1;
             gameState.buzz(player, Date.now()-(player.latency));
-            io.to(player.roomId.toString()).emit("update", gameState)
+            io.to(player.roomId.toString()).emit("update", gameState);
+            io.to(player.roomId.toString()).emit("buzzNoise");
         })
 
-        socket.on("movePlayer", (data:{playerId:string, teamNumber:number})=>{
+        socket.on("movePlayer", (data:{playerId:string, teamNumber:0|1|2})=>{
             const player = players[data.playerId];
             const gameState = rooms[player.roomId].gameState;
             gameState.movePlayer(player, data.teamNumber);
             io.to(player.roomId.toString()).emit("update", gameState);
         })
 
-        socket.on("incrementScore", (data:{playerId:string, score:number})=>{
+        socket.on("incrementScore", (data:{playerId:string, score:number, isOverride:boolean})=>{
             const player = players[data.playerId];
             const gameState = rooms[player.roomId].gameState;
             if (player.teamNumber != 0)(player.teamNumber == 1?gameState.team1:gameState.team2).score(player, data.score);
             else(player.score(data.score));
-            if(rooms[player.roomId].settings.shouldLock && data.score <= 0){
-                gameState.clearAndLock(player);
-            }
-            if(rooms[player.roomId].settings.autoClear){
-                if(data.score > 0) gameState.clearBuzz();
-                else player.isLocked = true;
-
-                if(rooms[player.roomId].settings.shouldLock){
-                    gameState.clearBuzz();
+            if(!data.isOverride){
+                if(rooms[player.roomId].settings.shouldLock && data.score <= 0){
+                    gameState.clearAndLock(player);
                 }
+                if(rooms[player.roomId].settings.autoClear){
+                    if(data.score > 0) gameState.clearBuzz();
+                    else player.isLocked = true;
+                    if(rooms[player.roomId].settings.shouldLock && gameState.team1.isLocked && gameState.team2.isLocked){
+                        gameState.clearBuzz();
+                    }
+                    
+                    Object.entries(gameState.buzzedList).forEach((entries) =>{
+                        if(entries[1] == player) delete Object.keys(gameState.buzzedList)[0];
+                    })
+                }
+    
             }
-            delete gameState.buzzedList[Object.keys(gameState.buzzedList)[0]];
             io.to(player.roomId.toString()).emit("update", gameState);
         })
 
         socket.on("clearBuzz", (roomId:number)=>{
             rooms[roomId].gameState.clearBuzz();
-            console.log(rooms[roomId].gameState);
             io.to(roomId.toString()).emit("update", rooms[roomId].gameState);
         })
 

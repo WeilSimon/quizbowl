@@ -2,7 +2,7 @@
 import ioClient from 'socket.io-client';
 import type { GameStateData, PlayerData } from '../../../types';
 const socket = ioClient("cs.catlin.edu", {
-    path:"/node/2023/simon/socket.io",
+    path:"/node/quizbowl/socket.io",
 });
 import {invalidate} from "$app/navigation"
 import {page} from "$app/stores"
@@ -17,20 +17,24 @@ let isLocked = false;
 let name = writable('');
 let roomId:Writable<number> = writable();
 
-let buzzList:PlayerData[] = []
+let buzzList:{[key:string]:PlayerData} = {}
+
 
 
 function login(invalidcb:() => void){
-    
     socket.emit("login", {name:$name,roomId:$roomId}, (response:{isConnected: boolean, gamestate:GameStateData}) => {
         inRoom = response.isConnected
         if(inRoom){
-		    buzzList = Object.values(response.gamestate.buzzedList ?? {});
+	        buzzList = response.gamestate.buzzedList;
+            let url = new URL(window.location.href)
+            let params = url.searchParams
+            params.set("room", $roomId.toString())
+            params.set("name", $name)
+            console.log(params)
+            // window.location.search = url.search;
         } else {
             invalidcb()
         }
-        
-        
     })
     return true;
     

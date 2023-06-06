@@ -2,19 +2,18 @@
 	// import bootstrap from 'bootstrap';
 
 	import ioClient from 'socket.io-client';
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount, beforeUpdate } from 'svelte';
 	import type { GameStateData, PlayerData, Settings } from '../../../types';
 	import BuzzList from '../BuzzList.svelte';
 	import PlayerButton from './PlayerButton.svelte';
 	import SettingsModal from './SettingsModal.svelte';
+	import PlayerModal from './PlayerModal.svelte';
+	import IncremementerButtonGroup from './IncremementerButtonGroup.svelte';
 	import { writable, type Writable } from 'svelte/store';
 	const socket = ioClient("cs.catlin.edu", {
-        path:"/node/2023/simon/socket.io",
+        path:"/node/quizbowl/socket.io",
     });
 	let jq: any;
-	/**
-	 * @type {any}
-	 */
 	let roomId: number;
 
 	let team1: Writable<PlayerData[]> = writable([]);
@@ -27,11 +26,46 @@
 
 	let settings: Writable<Settings> = writable({ shouldLock: false, autoClear: false });
 
-	onMount(() => jq = (<any>window).$);
+	let buzzSound:any;
+
+	let timerStart = false;
+	let startTime = Date.now();
+	let timeRemaining = 0;
+
+	function getQueryVariable(key:string) {
+		var query = window.location.search.substring(1);
+		var vars = query.split('&');
+		for (var i = 0; i < vars.length; i++) {
+			var pair = vars[i].split('=');
+			if (decodeURIComponent(pair[0]) == key) {
+				return decodeURIComponent(pair[1]);
+			}
+		}
+	}
+
+	onMount(() => {
+		jq = (<any>window).$
+		roomId = parseInt(getQueryVariable("roomId") ?? "")
+		buzzSound = new Audio("/buzz.mp3");
+	});
+
+	onDestroy(() => {
+		socket.emit("hostDisconnect", roomId);
+		socket.disconnect();
+		})
+	
+	setInterval(()=>{
+		timeRemaining = (10000-(Date.now() - startTime))/100;
+		if(timeRemaining < 0) timeRemaining = 0;
+	},50)
+
+
 	let selectedPlayer: PlayerData;
+	let selectedPlayerTeam:0|1|2
 
 	socket.once('connect', () => {
-		socket.emit('hostLogin', (response: { roomId: number; settings: Settings }) => {
+		console.log(roomId)
+		socket.emit('hostLogin', {roomId:roomId}, (response: { roomId: number; settings: Settings }) => {
 			roomId = response.roomId;
 			$settings = response.settings;
 
@@ -41,6 +75,8 @@
 		});
 	});
 
+	
+
 	socket.on('update', (gameData: GameStateData) => {
 		gameState = gameData;
 		$team1 = Object.values(gameData.team1.playerList);
@@ -48,11 +84,20 @@
 		$teamNull = Object.values(gameData.teamNull);
 		buzzList = Object.values(gameData.buzzedList);
 		$areAnyBlocked = checkAnyBlocked();
+		selectedPlayer = gameState?.team1.playerList[selectedPlayer.id] ?? gameState?.team2.playerList[selectedPlayer.id] ?? gameState?.teamNull[selectedPlayer.id]
 	});
 
-	function showPopup(player: PlayerData) {
+	socket.on('buzzNoise', ()=>{
+		buzzSound.load();
+		buzzSound.play();
+	})
+
+
+
+	function showPopup(team:0|1|2, player: PlayerData) {
 		console.log('Showing popup for', player);
 		selectedPlayer = player;
+		selectedPlayerTeam = team;
 		jq('#playerModal').modal('show');
 	}
 
@@ -91,7 +136,11 @@
 	}
 
 	function updatePoints(points: number) {
-		socket.emit('incrementScore', { playerId: buzzList[0].id, score: points });
+		updatePointsFull(points, buzzList[0], false)
+	}
+
+	function updatePointsFull(points: number, player:PlayerData, override:boolean) {
+		socket.emit('incrementScore', { playerId: player.id, score: points, isOverride:override });
 	}
 
 	function closePopup() {
@@ -164,33 +213,33 @@
 					</ul>
 					{#each Array(Math.max($team1.length, $team2.length, $teamNull.length)) as _, index (index)}
 						<ul id="playerList" class="list-group list-group-stacking list-group-horizontal">
-							<PlayerButton team={team1} {index} {showPopup} />
+							<PlayerButton team={team1} {index} showPopup={(p) => showPopup(1, p)} />
 							<li class="list-group-item">
 								{#if $teamNull[index] != null}
 									<div class="btn-group" role="group" aria-label="Basic example">
 										<button
 											type="button"
 											class="btn btn-primary"
-											on:click={() => setPlayerTeam1($teamNull[index])}>←</button
+											on:click={() => setPlayerTeam1($teamNull[index])}><i class="fas fa-arrow-left" /></button
 										>
-										<button on:click={() => showPopup($teamNull[index])} class=" btn btn-{$teamNull[index].isLocked? 'warning': $teamNull[index].isBuzzed ? 'danger': 'primary'}">
+										<button on:click={() => showPopup(0, $teamNull[index])} class=" btn btn-{$teamNull[index].isLocked? 'warning': $teamNull[index].isBuzzed ? 'danger': 'primary'}">
                                             {$teamNull[index].name}
                                         </button>
 										<button
 											type="button"
 											class="btn btn-primary"
-											on:click={() => setPlayerTeam2($teamNull[index])}>→</button
+											on:click={() => setPlayerTeam2($teamNull[index])}><i class="fas fa-arrow-right" /></button
 										>
 									</div>
 								{/if}
 							</li>
-							<PlayerButton team={team2} {index} {showPopup} />
+							<PlayerButton team={team2} {index} showPopup={(p) => showPopup(2, p)} />
 						</ul>
 					{/each}
 				</div>
 			</div>
 			<div class="col-3">
-				<BuzzList {buzzList} />
+				<BuzzList buzzList={gameState?.buzzedList ?? {}} />
 			</div>
 			<div class="col-3">
 				<span id="header" class="d-flex justify-content-between align-items-center">
@@ -199,31 +248,11 @@
 					>
 				</span>
 				<div class="buttonpanel">
-					<button on:click={clearBuzzers} class="{$areAnyBlocked ? '' : 'disabled'} btn btn-primary"
-						>Clear Buzzers</button
-					>
-					<div class="btn-group" role="group" aria-label="Basic example">
-						<button
-							type="button"
-							on:click={() => updatePoints(15)}
-							class="{$areAnyBlocked ? '' : 'disabled'} btn btn-success">+15</button
-						>
-						<button
-							type="button"
-							on:click={() => updatePoints(10)}
-							class="{$areAnyBlocked ? '' : 'disabled'} btn btn-warning">+10</button
-						>
-						<button
-							type="button"
-							on:click={() => updatePoints(0)}
-							class="{$areAnyBlocked ? '' : 'disabled'} btn btn-secondary">0</button
-						>
-						<button
-							type="button"
-							on:click={() => updatePoints(-5)}
-							class="{$areAnyBlocked ? '' : 'disabled'} btn btn-danger">-5</button
-						>
+					<div class="progress" role="progressbar" aria-label="Basic example" style="height: 40px;" on:click={()=>{timerStart = true; startTime = Date.now()}}>
+						<div class="progress-bar overflow-visible" style="width: {!timerStart?100:timeRemaining}%;transition:none">{!timerStart?'Timer':''}</div>
 					</div>
+					<button on:click={clearBuzzers} class="{$areAnyBlocked ? '' : 'disabled'} btn btn-primary">Clear Buzzers</button>
+					<IncremementerButtonGroup {updatePoints}/>
 				</div>
 			</div>
 		</div>
@@ -231,72 +260,7 @@
 </div>
 
 <!-- Modal -->
-<div
-	class="modal fade"
-	id="playerModal"
-	tabindex="-1"
-	aria-labelledby="playerModalLabel"
-	aria-hidden="true"
->
-	<div class="modal-dialog">
-		<div class="modal-content">
-			<div class="modal-header">
-				<h1 class="modal-title fs-5" id="playerModalLabel">Manage {selectedPlayer?.name}</h1>
-				<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" />
-			</div>
-			<div class="modal-body">
-				<button
-					type="button"
-					on:click={() => {
-						kick(selectedPlayer);
-						closePopup();
-					}}
-					class="modalbutton btn btn-danger">Kick</button
-				>
-				<div class="input-group mb-3">
-					<input
-						id="renameField"
-						on:keypress={(event) => {
-							if (event.key == 'Enter') {
-								rename();
-							}
-						}}
-						type="text"
-						class="form-control"
-						placeholder="New username"
-					/>
-					<button on:click={rename} class="btn btn-primary input-group-text">Rename</button>
-				</div>
-				{#if selectedPlayer?.teamNumber != 0}
-					<button
-						type="button"
-						on:click={() => {
-							swapPlayerTeam(selectedPlayer);
-							closePopup();
-						}}
-						class="modalbutton btn btn-primary">Switch Team</button
-					>
-				{/if}
-				<br />
-				<ul class="list-group list-group-stacking list-group-horizontal">
-					<li class="list-group-item list-group-header">Points</li>
-					<li class="list-group-item list-group-header">Buzzed</li>
-					<li class="list-group-item list-group-header">Power</li>
-					<li class="list-group-item list-group-header">Neg 5</li>
-				</ul>
-				<ul class="list-group list-group-stacking list-group-horizontal">
-					<li class="list-group-item">{selectedPlayer?.points}</li>
-					<li class="list-group-item">{selectedPlayer?.timesBuzzed}</li>
-					<li class="list-group-item">{selectedPlayer?.power}</li>
-					<li class="list-group-item">{selectedPlayer?.negFives}</li>
-				</ul>
-			</div>
-			<div class="modal-footer">
-				<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-			</div>
-		</div>
-	</div>
-</div>
+<PlayerModal {kick} {closePopup} {rename} {swapPlayerTeam} {selectedPlayer} updatePoints={updatePointsFull} ></PlayerModal>
 
 <SettingsModal {settings} />
 

@@ -3,7 +3,6 @@
 	import type { PlayerData, TeamData } from '../../../types';
 
 	export let team: Writable<PlayerData[]>;
-
 	export let showPopup: (player: PlayerData) => void;
 	export let index: number;
 </script>
