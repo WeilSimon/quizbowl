@@ -7,7 +7,7 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const packageDir = path.resolve(__dirname, './package');
+const packageDir = path.resolve(__dirname, './src');
 const files = fs.readdirSync(packageDir);
 const svelteFiles = files.filter((file) => file.endsWith('.svelte'));
 

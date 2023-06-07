@@ -32,5 +32,8 @@ export type BuzzerState = "clear"|"locked"|"buzzed"
 
 export interface Settings{
     shouldLock:boolean;
-    autoClear:boolean
+    autoClear:boolean;
+    timerDuration:number;
+    tournamentStyleBounce:boolean
+    shouldBounce:boolean
 }

@@ -66,11 +66,11 @@
             <label for="roomId" class="form-label">Room ID</label>
             <input type="number" maxlength="6" class="form-control" bind:value={$roomId} name="roomId" id="roomId" required>
             <div class="invalid-feedback">
-                Invalid room ID
+                Invalid Room ID
             </div>
         </div>
         <div class="mb-3">
-            <input type="submit" class="form-control btn btn-primary" value="Login" style="font-size: 20px;">
+            <input type="submit" class="form-control btn btn-primary" value="Join Room" style="font-size: 20px;">
         </div>
     </form>
 </div>

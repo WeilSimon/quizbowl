@@ -24,6 +24,8 @@
 	socket.on('disconnect', (reason) => {
 		console.log(reason)
 		console.log('disconnecting :(');
+		window.location.href = window.location.origin+window.location.pathname + "?user=" + $name + "&roomId=" + $roomId;
+		return;
 		if (reason == "io server disconnect") {
 			window.location.href = window.location.href.replace('player', '?error=1');
 			// window.location.href = window.location.origin+window.location.pathname + "?user=" + $name + "&roomId=" + $roomId;

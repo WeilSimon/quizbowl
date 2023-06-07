@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { PlayerData } from "../../../types";
-	import IncremementerButtonGroup from "./IncremementerButtonGroup.svelte";
+	import IncremementerButtonGroupPlayer from "./IncremementerButtonGroupPlayer.svelte";
 
     export let selectedPlayer:PlayerData;
     export let kick:(player:PlayerData) => void;
@@ -28,22 +28,22 @@
 				{#if selectedPlayer?.teamNumber != 0}
 					<button type="button" on:click={() => {swapPlayerTeam(selectedPlayer); closePopup();}} class="modalbutton btn btn-primary">Switch Team</button>
 				{/if}
-				<br />
+				<IncremementerButtonGroupPlayer updatePoints={(points) => {updatePoints(points, selectedPlayer, true)}}/>
+				<div class=spacing></div>
 				<ul class="list-group list-group-stacking list-group-horizontal">
+					<li class="list-group-item list-group-header">Power</li>
 					<li class="list-group-item list-group-header">Points</li>
 					<li class="list-group-item list-group-header">Buzzed</li>
-					<li class="list-group-item list-group-header">Power</li>
 					<li class="list-group-item list-group-header">Neg 5</li>
 				</ul>
-				{#if refresh > 0} 
+				
 				<ul class="list-group list-group-stacking list-group-horizontal">
+					<li class="list-group-item">{selectedPlayer?.power}</li>
 					<li class="list-group-item">{selectedPlayer?.points}</li>
 					<li class="list-group-item">{selectedPlayer?.timesBuzzed}</li>
-					<li class="list-group-item">{selectedPlayer?.power}</li>
 					<li class="list-group-item">{selectedPlayer?.negFives}</li>
 				</ul>
-				{/if}
-				<IncremementerButtonGroup updatePoints={(points) => {updatePoints(points, selectedPlayer, true)}}/>
+				
 			</div>
 			<div class="modal-footer">
 				<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
@@ -54,7 +54,9 @@
 
 
 <style lang="scss">
-    
+	.spacing {
+		margin-bottom:20px;
+	}
 	.modalbutton {
 		width: 100%;
 		margin-top: 5px;

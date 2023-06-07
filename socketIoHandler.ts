@@ -21,7 +21,7 @@ export default function injectSocketIO(server: Partial<ServerOptions> | undefine
                 }while(rooms[this.roomId] != undefined)
             }
             this.gameState = new GameState;
-            this.settings = {shouldLock:true, autoClear:true};
+            this.settings = {shouldBounce:true, tournamentStyleBounce: false, shouldLock:true, autoClear:true, timerDuration:10000};
             this.hostId = hostId;
         }
     }
@@ -113,8 +113,26 @@ export default function injectSocketIO(server: Partial<ServerOptions> | undefine
                     player.isLocked = true;
                 });
             }
+        }
+        
+        public setLockAll(shouldLock:boolean){
+            this.buzzedList = {};
 
+            this.team1.isLocked = shouldLock;
+            this.team2.isLocked = shouldLock;
             
+            Object.values(this.team1.playerList).forEach(player => {
+                player.isBuzzed = false;
+                player.isLocked = shouldLock;
+            })
+            Object.values(this.team2.playerList).forEach(player => {
+                player.isBuzzed = false;
+                player.isLocked = shouldLock;
+            });
+            Object.values(this.teamNull).forEach(player =>{
+                player.isBuzzed = false;
+                player.isLocked = shouldLock;
+            })
         }
     }
 
@@ -139,9 +157,13 @@ export default function injectSocketIO(server: Partial<ServerOptions> | undefine
             delete this.playerList[player.id]
         }
 
-        public score(player:Player, points:number){
+        public score(player:Player, points:number, isOverride:boolean){
             this.points += points;
-            player.score(points);
+            player.score(points, isOverride);
+        }
+
+        public teamScore(points:number){
+            this.points += points;
         }
     }
 
@@ -170,10 +192,10 @@ export default function injectSocketIO(server: Partial<ServerOptions> | undefine
             this.teamNumber = 0;
         }
 
-        public score(points:number){
+        public score(points:number, isOverride:boolean){
             this.points += points;
-            if(points == -5)this.negFives += 1;
-            else if (points == 15)this.power += 1;
+            if(points == -5 && !isOverride)this.negFives += 1;
+            else if (points == 15 && !isOverride)this.power += 1;
         }
     }
 
@@ -211,7 +233,7 @@ export default function injectSocketIO(server: Partial<ServerOptions> | undefine
                 gameState.removePlayer(player);
 
                 delete players[socket.id];
-                io.to(player.roomId.toString()).emit("update", gameState);
+                sendUpdate(player.roomId)
             }
             else {
                 let roomId:number;
@@ -251,7 +273,7 @@ export default function injectSocketIO(server: Partial<ServerOptions> | undefine
                 const player = new Player(socket.id, data.name, data.roomId);
                 players[socket.id] = player;
                 rooms[data.roomId].gameState.addPlayer(player);
-                io.to(data.roomId.toString()).emit("update", rooms[data.roomId].gameState);
+                sendUpdate(data.roomId)
                 ping(socket)   
             }
             callback(response)
@@ -269,7 +291,7 @@ export default function injectSocketIO(server: Partial<ServerOptions> | undefine
         socket.on("renamePlayer", (id:string, name:string) => {
             const player= players[id];
             player.name = name;
-            io.to(player.roomId.toString()).emit("update", rooms[player.roomId].gameState);
+            sendUpdate(player.roomId)
         })
 
         socket.on("kickPlayer", (id:string) => {
@@ -281,7 +303,7 @@ export default function injectSocketIO(server: Partial<ServerOptions> | undefine
             delete players[id];
 
             io.sockets.sockets.get(id)?.disconnect()
-            io.to(player.roomId.toString()).emit("update", gameState);
+            sendUpdate(player.roomId)
         })
 
         socket.on("buzz", ()=>{
@@ -289,7 +311,7 @@ export default function injectSocketIO(server: Partial<ServerOptions> | undefine
             const gameState = rooms[player.roomId].gameState;
             player.timesBuzzed += 1;
             gameState.buzz(player, Date.now()-(player.latency));
-            io.to(player.roomId.toString()).emit("update", gameState);
+            sendUpdate(player.roomId)
             io.to(player.roomId.toString()).emit("buzzNoise");
         })
 
@@ -297,14 +319,14 @@ export default function injectSocketIO(server: Partial<ServerOptions> | undefine
             const player = players[data.playerId];
             const gameState = rooms[player.roomId].gameState;
             gameState.movePlayer(player, data.teamNumber);
-            io.to(player.roomId.toString()).emit("update", gameState);
+            sendUpdate(player.roomId)
         })
 
         socket.on("incrementScore", (data:{playerId:string, score:number, isOverride:boolean})=>{
             const player = players[data.playerId];
             const gameState = rooms[player.roomId].gameState;
-            if (player.teamNumber != 0)(player.teamNumber == 1?gameState.team1:gameState.team2).score(player, data.score);
-            else(player.score(data.score));
+            if (player.teamNumber != 0)(player.teamNumber == 1?gameState.team1:gameState.team2).score(player, data.score, data.isOverride);
+            else(player.score(data.score, data.isOverride));
             if(!data.isOverride){
                 if(rooms[player.roomId].settings.shouldLock && data.score <= 0){
                     gameState.clearAndLock(player);
@@ -322,12 +344,24 @@ export default function injectSocketIO(server: Partial<ServerOptions> | undefine
                 }
     
             }
-            io.to(player.roomId.toString()).emit("update", gameState);
+            sendUpdate(player.roomId)
+        })
+
+        socket.on("incrementTeamScore", (data:{roomId:number, teamId:1|2, score:number})=>{
+            let gameState = rooms[data.roomId].gameState;
+            if(data.teamId == 1)gameState.team1.teamScore(data.score);
+            else gameState.team2.teamScore(data.score);
+            sendUpdate(data.roomId);
+        })
+
+        socket.on("setBuzzerLock", (roomId:number, shouldLock:boolean)=>{
+            rooms[roomId].gameState.setLockAll(shouldLock)
+            sendUpdate(roomId)
         })
 
         socket.on("clearBuzz", (roomId:number)=>{
             rooms[roomId].gameState.clearBuzz();
-            io.to(roomId.toString()).emit("update", rooms[roomId].gameState);
+            sendUpdate(roomId)
         })
 
         socket.on("getPlayerData", (callback:(player:Player) => void)=>{
@@ -341,5 +375,9 @@ export default function injectSocketIO(server: Partial<ServerOptions> | undefine
         })
 
     })
+
+    function sendUpdate(roomId:number) {
+        io.to(roomId.toString()).emit("update", rooms[roomId].gameState);
+    }
 
 }

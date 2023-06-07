@@ -33,4 +33,7 @@
     .btn-group {
         width:100%
     }
+    button {
+        width:25%;
+    }
 </style>
