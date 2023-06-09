@@ -223,12 +223,9 @@
 
 	function updatePoints(points: number) {
 		timerState = TimerState.NOT_STARTED;
-		if(currentMode == GameMode.TOSS_UP_BONUS && buzzList[0].teamNumber != 0){
+		if(currentMode == GameMode.TOSS_UP_BONUS && buzzList[0].teamNumber != 0 && points > 0){
 			bonusRoundData.leadTeam = buzzList[0].teamNumber;
-			console.log("EXTRA")
-
 			resetBonus();
-			console.log("FUN")
 			jq('#bonusModal').modal('show');
 		}
 		updatePointsFull(points, buzzList[0], false)
